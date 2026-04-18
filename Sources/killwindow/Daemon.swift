@@ -43,16 +43,22 @@ func runDaemon() -> Never {
     // Under launchd the "responsible process" is this binary (not the
     // terminal that ran `brew services start`). Calling AX with prompt
     // here is what actually registers /opt/homebrew/bin/killwindow with
-    // System Settings → Accessibility so the user can toggle it on.
-    let trusted = requestAccessibilityTrust(prompt: true)
-    if !trusted {
+    // System Settings → Accessibility. Poll until the user grants the
+    // permission — exiting on each check would respawn-loop under
+    // launchd's keep_alive and re-trigger prompts forever.
+    if !requestAccessibilityTrust(prompt: true) {
         FileHandle.standardError.write(Data("""
-        daemon: Accessibility permission not yet granted.
-        killwindow has been added to System Settings → Privacy & Security →
-        Accessibility. Toggle it on, then: brew services restart killwindow
+        daemon: waiting for Accessibility permission. grant it in
+        System Settings → Privacy & Security → Accessibility → killwindow.
+        if killwindow isn't listed, click the + button and add
+        \(Bundle.main.executablePath ?? "/opt/homebrew/bin/killwindow") manually.
 
         """.utf8))
-        exit(1)
+        while !requestAccessibilityTrust(prompt: false) {
+            Thread.sleep(forTimeInterval: 3)
+        }
+        FileHandle.standardError.write(Data(
+            "daemon: Accessibility granted — registering hotkey\n".utf8))
     }
 
     // Signature "KWHK" (killwindow hotkey) — any stable 4-byte id is fine.
