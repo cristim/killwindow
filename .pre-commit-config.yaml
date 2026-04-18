@@ -1,13 +1,7 @@
 repos:
-  - repo: https://github.com/pre-commit/pre-commit-hooks
-    rev: v4.6.0
-    hooks:
-      - id: trailing-whitespace
-      - id: end-of-file-fixer
-      - id: check-yaml
-      - id: check-merge-conflict
-      - id: check-added-large-files
-
+  # Local hooks only — no python venv bootstrap. The pre-commit-hooks
+  # repo was dropped because its virtualenv install broke on systems
+  # where python3.14 and libexpat are out of sync.
   - repo: local
     hooks:
       - id: swift-format-lint

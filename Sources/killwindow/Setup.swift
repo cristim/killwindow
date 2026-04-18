@@ -1,5 +1,17 @@
 import AppKit
+import ApplicationServices
 import Foundation
+
+// Ask macOS for Accessibility permission. Passing prompt=true registers
+// the current binary in the Accessibility list (so the user can see it
+// and toggle it on) and triggers the system's own grant dialog.
+// Returns true if already trusted.
+@discardableResult
+func requestAccessibilityTrust(prompt: Bool) -> Bool {
+    let key = kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String
+    let opts = [key: prompt] as CFDictionary
+    return AXIsProcessTrustedWithOptions(opts)
+}
 
 func printSetupHelp() {
     print("""
@@ -64,10 +76,13 @@ func runSetup(args: [String]) -> Never {
     }
 
     let current = currentHotkey()
+    let alreadyTrusted = requestAccessibilityTrust(prompt: false)
+
     print("""
 
     current hotkey: \(formatHotkey(current))
     config file:    \(configPath().path)
+    binary:         \(Bundle.main.executablePath ?? "/opt/homebrew/bin/killwindow")
 
     change the hotkey:
       killwindow setup --hotkey 'ctrl+opt+cmd+k'
@@ -75,12 +90,23 @@ func runSetup(args: [String]) -> Never {
 
     start the background hotkey daemon:
       brew services start killwindow
-
-    Accessibility permission: killwindow needs this to capture your click.
-    Opening System Settings → Privacy & Security → Accessibility for you now.
-    Add this binary to the list and toggle it on:
-      \(Bundle.main.executablePath ?? "/opt/homebrew/bin/killwindow")
     """)
+
+    if alreadyTrusted {
+        print("\nAccessibility: ✓ already granted. You're all set.")
+        exit(0)
+    }
+
+    print("""
+
+    Accessibility: not yet granted. Requesting now — macOS will add killwindow
+    to the Accessibility list and open the Settings pane. Toggle it on there.
+    """)
+
+    // Prompt=true registers this binary with the Accessibility list and
+    // shows the system's grant dialog. This is what gets killwindow to
+    // appear as a toggle the user can enable.
+    requestAccessibilityTrust(prompt: true)
 
     let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")!
     NSWorkspace.shared.open(url)
