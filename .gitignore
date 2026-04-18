@@ -1,0 +1,9 @@
+.build/
+.swiftpm/
+Package.resolved
+*.xcodeproj/
+/killwindow
+*.dSYM/
+*.o
+.DS_Store
+.claude/

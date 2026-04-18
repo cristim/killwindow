@@ -1,0 +1,25 @@
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.6.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+      - id: check-merge-conflict
+      - id: check-added-large-files
+
+  - repo: local
+    hooks:
+      - id: swift-format-lint
+        name: swift-format lint (optional; install via `brew install swift-format`)
+        entry: bash -c 'command -v swift-format >/dev/null 2>&1 || exit 0; exec swift-format lint --recursive Sources'
+        language: system
+        pass_filenames: false
+        files: '\.swift$'
+
+      - id: swift-build
+        name: swift build
+        entry: swift build
+        language: system
+        pass_filenames: false
+        files: '\.(swift|Package\.swift)$'

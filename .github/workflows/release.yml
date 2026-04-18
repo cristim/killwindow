@@ -1,0 +1,82 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: macos-14
+    env:
+      TAP_OWNER: cristim
+      TAP_REPO: homebrew-tap
+      FORMULA_NAME: killwindow
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build release binary
+        run: swift build -c release
+
+      - name: Package tarball
+        id: pack
+        run: |
+          set -euo pipefail
+          VERSION="${GITHUB_REF#refs/tags/v}"
+          BIN_DIR=".build/release"
+          TARBALL="killwindow-${VERSION}-macos.tar.gz"
+          tar -czf "$TARBALL" -C "$BIN_DIR" killwindow
+          SHA=$(shasum -a 256 "$TARBALL" | awk '{print $1}')
+          {
+            echo "version=$VERSION"
+            echo "sha256=$SHA"
+            echo "tarball=$TARBALL"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ steps.pack.outputs.version }}
+          TARBALL: ${{ steps.pack.outputs.tarball }}
+        run: |
+          set -euo pipefail
+          gh release create "v${VERSION}" "${TARBALL}" \
+            --title "v${VERSION}" --generate-notes
+
+      - name: Update Homebrew formula in tap
+        env:
+          TAP_TOKEN: ${{ secrets.TAP_TOKEN }}
+          VERSION:   ${{ steps.pack.outputs.version }}
+          SHA256:    ${{ steps.pack.outputs.sha256 }}
+        run: |
+          set -euo pipefail
+          git clone "https://x-access-token:${TAP_TOKEN}@github.com/${TAP_OWNER}/${TAP_REPO}.git" tap
+          cd tap
+          mkdir -p Formula
+          cat > "Formula/${FORMULA_NAME}.rb" <<EOF
+          class Killwindow < Formula
+            desc "macOS xkill: click a window to SIGTERM/SIGKILL its owning process"
+            homepage "https://github.com/${TAP_OWNER}/killwindow"
+            url "https://github.com/${TAP_OWNER}/killwindow/releases/download/v${VERSION}/killwindow-${VERSION}-macos.tar.gz"
+            sha256 "${SHA256}"
+            license "MIT"
+            version "${VERSION}"
+
+            depends_on :macos
+
+            def install
+              bin.install "killwindow"
+            end
+
+            test do
+              assert_match "killwindow", shell_output("#{bin}/killwindow --help")
+            end
+          end
+          EOF
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add "Formula/${FORMULA_NAME}.rb"
+          git commit -m "killwindow ${VERSION}"
+          git push
