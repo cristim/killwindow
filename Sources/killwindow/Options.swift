@@ -34,6 +34,7 @@ func printHelp() {
                        like AutoFillPanelService. Window Server is always
                        excluded.
       -d, --debug      verbose: dump click location and window list
+      -v, --version    show version
       -h, --help       show this help
 
     Accessibility permission is required so killwindow can capture your next
@@ -50,6 +51,7 @@ func parseArgs() -> Options {
         case "-k", "--kill":      opts.signal = SIGKILL
         case "-a", "--any-layer": opts.anyLayer = true
         case "-d", "--debug":     opts.debug = true
+        case "-v", "--version":   print("killwindow \(killwindowVersion)"); exit(0)
         case "-h", "--help":      printHelp(); exit(0)
         default:
             FileHandle.standardError.write(Data("unknown option: \(arg)\n".utf8))
