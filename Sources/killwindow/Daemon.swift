@@ -1,4 +1,5 @@
 import AppKit
+import ApplicationServices
 import Carbon.HIToolbox
 import Foundation
 
@@ -38,6 +39,21 @@ func runDaemon() -> Never {
     _ = NSApplication.shared
     NSApp.setActivationPolicy(.accessory)
     NSApp.finishLaunching()
+
+    // Under launchd the "responsible process" is this binary (not the
+    // terminal that ran `brew services start`). Calling AX with prompt
+    // here is what actually registers /opt/homebrew/bin/killwindow with
+    // System Settings → Accessibility so the user can toggle it on.
+    let trusted = requestAccessibilityTrust(prompt: true)
+    if !trusted {
+        FileHandle.standardError.write(Data("""
+        daemon: Accessibility permission not yet granted.
+        killwindow has been added to System Settings → Privacy & Security →
+        Accessibility. Toggle it on, then: brew services restart killwindow
+
+        """.utf8))
+        exit(1)
+    }
 
     // Signature "KWHK" (killwindow hotkey) — any stable 4-byte id is fine.
     let signature: OSType = 0x4B57484B  // 'KWHK'

@@ -76,7 +76,6 @@ func runSetup(args: [String]) -> Never {
     }
 
     let current = currentHotkey()
-    let alreadyTrusted = requestAccessibilityTrust(prompt: false)
 
     print("""
 
@@ -84,29 +83,25 @@ func runSetup(args: [String]) -> Never {
     config file:    \(configPath().path)
     binary:         \(Bundle.main.executablePath ?? "/opt/homebrew/bin/killwindow")
 
-    change the hotkey:
+    To enable the background hotkey (\(formatHotkey(current))):
+
+      1. brew services start killwindow
+
+         The daemon starts under launchd, which registers killwindow with
+         System Settings → Privacy & Security → Accessibility on first run.
+
+      2. Open Accessibility settings (opening for you now), find
+         'killwindow' in the list, and toggle it on.
+
+      3. brew services restart killwindow
+
+         The daemon picks up the new permission and the hotkey starts
+         working globally.
+
+    Change the hotkey:
       killwindow setup --hotkey 'ctrl+opt+cmd+k'
       brew services restart killwindow
-
-    start the background hotkey daemon:
-      brew services start killwindow
     """)
-
-    if alreadyTrusted {
-        print("\nAccessibility: ✓ already granted. You're all set.")
-        exit(0)
-    }
-
-    print("""
-
-    Accessibility: not yet granted. Requesting now — macOS will add killwindow
-    to the Accessibility list and open the Settings pane. Toggle it on there.
-    """)
-
-    // Prompt=true registers this binary with the Accessibility list and
-    // shows the system's grant dialog. This is what gets killwindow to
-    // appear as a toggle the user can enable.
-    requestAccessibilityTrust(prompt: true)
 
     let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")!
     NSWorkspace.shared.open(url)
