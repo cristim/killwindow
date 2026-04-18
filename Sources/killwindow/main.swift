@@ -3,6 +3,18 @@ import CoreGraphics
 import Darwin
 
 let myPid = getpid()
+
+// Subcommand dispatch before any AppKit setup. Each handler is `-> Never`
+// (it calls `exit`), so control returns here only when there is no match.
+let rawArgs = Array(CommandLine.arguments.dropFirst())
+if let sub = rawArgs.first {
+    switch sub {
+    case "daemon": runDaemon()
+    case "setup":  runSetup(args: Array(rawArgs.dropFirst()))
+    default:       break  // fall through to one-shot kill mode
+    }
+}
+
 let options = parseArgs()
 var outcome: Outcome = .cancelled
 var ui: KillwindowUI!

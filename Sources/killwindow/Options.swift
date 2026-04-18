@@ -20,6 +20,8 @@ func printHelp() {
     killwindow — click a window to kill its owning process
 
     usage: killwindow [options]
+           killwindow daemon              run as a background hotkey daemon
+           killwindow setup [options]     grant Accessibility, configure hotkey
 
     default signal is SIGTERM (graceful). Hold ⌘ while clicking to force SIGKILL.
 
@@ -34,8 +36,9 @@ func printHelp() {
       -d, --debug      verbose: dump click location and window list
       -h, --help       show this help
 
-    needs Accessibility permission for the terminal running it.
-    grant it in: System Settings → Privacy & Security → Accessibility.
+    Accessibility permission is required so killwindow can capture your next
+    click. Grant it in System Settings → Privacy & Security → Accessibility.
+    Run `killwindow setup` to open that pane directly.
     """)
 }
 

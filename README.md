@@ -12,13 +12,13 @@ A macOS [`xkill`](https://linux.die.net/man/1/xkill) equivalent: click a window 
 ```sh
 brew tap cristim/tap
 brew install killwindow
+killwindow setup          # opens Accessibility pane, shows/sets hotkey
 ```
 
 ## Requirements
 
 - macOS 11+
-- **Accessibility permission** for the terminal or launcher that starts `killwindow`
-  (System Settings → Privacy & Security → Accessibility). Without it, the event tap cannot capture your click.
+- **Accessibility permission** for the `killwindow` binary (and for the terminal that launches it, if you run it from a shell). Without it, the event tap cannot capture your click.
 
 ## Usage
 
@@ -30,6 +30,27 @@ killwindow -a              # match any window layer (panels, HUDs, etc.)
 killwindow -d              # verbose debug output
 killwindow -h              # help
 ```
+
+### Background hotkey daemon
+
+`killwindow daemon` registers a global hotkey (default **⌃⌥⌘K**) that fires a click-to-kill session from anywhere. Manage it with `brew services`:
+
+```sh
+brew services start killwindow            # start at login, running now
+brew services stop killwindow
+brew services restart killwindow          # after changing the hotkey
+```
+
+### Configure the hotkey
+
+```sh
+killwindow setup                          # print current hotkey + open Accessibility
+killwindow setup --hotkey 'ctrl+opt+cmd+k'
+killwindow setup --hotkey 'shift+cmd+f13'
+brew services restart killwindow          # apply
+```
+
+Config is stored at `~/Library/Application Support/killwindow/config.json`. Modifiers: `ctrl`, `opt`, `cmd`, `shift`. Keys: `a–z`, `0–9`, `f1–f12`, `space`, `return`, `tab`, `delete`, `escape`, arrows.
 
 ## Build from source
 
