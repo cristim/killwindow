@@ -28,8 +28,20 @@ jobs:
         run: |
           set -euo pipefail
           VERSION="${GITHUB_REF#refs/tags/v}"
+          STAGE="killwindow-${VERSION}"
           TARBALL="killwindow-${VERSION}-macos.tar.gz"
-          tar -czf "$TARBALL" -C build killwindow.app
+
+          # Wrap killwindow.app in a versioned directory. Homebrew's
+          # default stage auto-cd's into a single top-level entry of
+          # the tarball — without this wrapper it would cd into the
+          # .app itself, and the formula's prefix.install call would
+          # fail to locate 'killwindow.app'.
+          rm -rf "$STAGE"
+          mkdir -p "$STAGE"
+          cp -R build/killwindow.app "$STAGE/"
+          tar -czf "$TARBALL" "$STAGE"
+          rm -rf "$STAGE"
+
           SHA=$(shasum -a 256 "$TARBALL" | awk '{print $1}')
           {
             echo "version=$VERSION"
@@ -69,12 +81,9 @@ jobs:
             depends_on :macos
 
             def install
-              # Tarball contains a .app bundle at the top level.
-              # Install it under the keg prefix and expose the inner
-              # binary as \\\`bin/killwindow\\\`. Running via the bundle
-              # means macOS TCC tracks us by CFBundleIdentifier
-              # (com.cristim.killwindow) so Accessibility / Input
-              # Monitoring grants survive brew upgrades.
+              # Tarball stages a killwindow-<version>/ directory whose
+              # only child is killwindow.app. Homebrew auto-cd's into
+              # that wrapper, so killwindow.app is in CWD.
               prefix.install "killwindow.app"
               bin.install_symlink prefix/"killwindow.app/Contents/MacOS/killwindow"
             end
