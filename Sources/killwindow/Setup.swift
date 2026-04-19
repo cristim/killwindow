@@ -1,16 +1,30 @@
 import AppKit
 import ApplicationServices
 import Foundation
+import IOKit.hid
 
-// Ask macOS for Accessibility permission. Passing prompt=true registers
-// the current binary in the Accessibility list (so the user can see it
-// and toggle it on) and triggers the system's own grant dialog.
-// Returns true if already trusted.
+// Ask macOS for Accessibility permission (needed for CGEventTap to
+// consume/modify events). prompt=true registers the current binary in
+// the Accessibility list and triggers the system's own grant dialog.
 @discardableResult
 func requestAccessibilityTrust(prompt: Bool) -> Bool {
     let key = kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String
     let opts = [key: prompt] as CFDictionary
     return AXIsProcessTrustedWithOptions(opts)
+}
+
+// Ask macOS for Input Monitoring permission (needed for CGEventTap to
+// LISTEN to events on macOS 10.15+). IOHIDRequestAccess always triggers
+// the system prompt on first call and registers the binary in the
+// Input Monitoring list. Returns true if already granted.
+@discardableResult
+func requestInputMonitoring() -> Bool {
+    return IOHIDRequestAccess(kIOHIDRequestTypeListenEvent)
+}
+
+// Non-prompting status check for polling loops.
+func inputMonitoringGranted() -> Bool {
+    IOHIDCheckAccess(kIOHIDRequestTypeListenEvent) == kIOHIDAccessTypeGranted
 }
 
 func printSetupHelp() {
@@ -88,14 +102,16 @@ func runSetup(args: [String]) -> Never {
       1. brew services start killwindow
 
          The daemon starts under launchd, which registers killwindow with
-         System Settings → Privacy & Security → Accessibility on first run.
+         both Accessibility and Input Monitoring on first run.
 
-      2. Open Accessibility settings (opening for you now), find
-         'killwindow' in the list, and toggle it on.
+      2. Open Settings → Privacy & Security and toggle killwindow on in
+         BOTH panes (needed by CGEventTap on macOS 10.15+):
+           • Accessibility    — to consume clicks
+           • Input Monitoring — to listen to clicks
 
       3. brew services restart killwindow
 
-         The daemon picks up the new permission and the hotkey starts
+         The daemon picks up the new permissions and the hotkey starts
          working globally.
 
     Change the hotkey:

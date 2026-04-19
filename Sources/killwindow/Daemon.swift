@@ -40,25 +40,32 @@ func runDaemon() -> Never {
     NSApp.setActivationPolicy(.accessory)
     NSApp.finishLaunching()
 
-    // Under launchd the "responsible process" is this binary (not the
-    // terminal that ran `brew services start`). Calling AX with prompt
-    // here is what actually registers /opt/homebrew/bin/killwindow with
-    // System Settings → Accessibility. Poll until the user grants the
-    // permission — exiting on each check would respawn-loop under
-    // launchd's keep_alive and re-trigger prompts forever.
-    if !requestAccessibilityTrust(prompt: true) {
+    // CGEventTap needs TWO permissions on modern macOS:
+    //   - Accessibility: to consume/modify events (e.g. swallow the click
+    //     before it reaches the target app)
+    //   - Input Monitoring: to *listen* to key/mouse events globally
+    // Both prompt calls are idempotent; they register this binary with
+    // their respective TCC lists the first time. Under launchd the
+    // "responsible process" is killwindow itself, so this is where the
+    // registration actually sticks (from an iTerm-spawned invocation the
+    // responsible process is iTerm, which already has its own grants).
+    let axOK = requestAccessibilityTrust(prompt: true)
+    let imOK = requestInputMonitoring()
+
+    let binary = Bundle.main.executablePath ?? "/opt/homebrew/bin/killwindow"
+    if !axOK || !imOK {
         FileHandle.standardError.write(Data("""
-        daemon: waiting for Accessibility permission. grant it in
-        System Settings → Privacy & Security → Accessibility → killwindow.
-        if killwindow isn't listed, click the + button and add
-        \(Bundle.main.executablePath ?? "/opt/homebrew/bin/killwindow") manually.
+        daemon: waiting for permissions. grant killwindow in BOTH:
+          System Settings → Privacy & Security → Accessibility       \(axOK ? "✓" : "✗")
+          System Settings → Privacy & Security → Input Monitoring    \(imOK ? "✓" : "✗")
+        if killwindow isn't listed, click + and add: \(binary)
 
         """.utf8))
-        while !requestAccessibilityTrust(prompt: false) {
+        while !requestAccessibilityTrust(prompt: false) || !inputMonitoringGranted() {
             Thread.sleep(forTimeInterval: 3)
         }
         FileHandle.standardError.write(Data(
-            "daemon: Accessibility granted — registering hotkey\n".utf8))
+            "daemon: permissions granted — registering hotkey\n".utf8))
     }
 
     // Signature "KWHK" (killwindow hotkey) — any stable 4-byte id is fine.
