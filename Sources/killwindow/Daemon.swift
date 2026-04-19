@@ -40,32 +40,25 @@ func runDaemon() -> Never {
     NSApp.setActivationPolicy(.accessory)
     NSApp.finishLaunching()
 
-    // CGEventTap needs TWO permissions on modern macOS:
-    //   - Accessibility: to consume/modify events (e.g. swallow the click
-    //     before it reaches the target app)
-    //   - Input Monitoring: to *listen* to key/mouse events globally
-    // Both prompt calls are idempotent; they register this binary with
-    // their respective TCC lists the first time. Under launchd the
-    // "responsible process" is killwindow itself, so this is where the
-    // registration actually sticks (from an iTerm-spawned invocation the
-    // responsible process is iTerm, which already has its own grants).
-    let axOK = requestAccessibilityTrust(prompt: true)
-    let imOK = requestInputMonitoring()
-
+    // CGEventTap in the spawned click-mode needs Accessibility. Input
+    // Monitoring helps on some macOS configurations but isn't mandatory,
+    // and bundle registration in the IM pane fails for some setups —
+    // don't block on it. Fire the IOHID request once at startup so macOS
+    // can register the bundle there if it wants to, but gate only on AX.
+    _ = requestInputMonitoring()
     let binary = Bundle.main.executablePath ?? "/opt/homebrew/bin/killwindow"
-    if !axOK || !imOK {
+    if !requestAccessibilityTrust(prompt: true) {
         FileHandle.standardError.write(Data("""
-        daemon: waiting for permissions. grant killwindow in BOTH:
-          System Settings → Privacy & Security → Accessibility       \(axOK ? "✓" : "✗")
-          System Settings → Privacy & Security → Input Monitoring    \(imOK ? "✓" : "✗")
+        daemon: waiting for Accessibility permission.
+          System Settings → Privacy & Security → Accessibility → killwindow
         if killwindow isn't listed, click + and add: \(binary)
 
         """.utf8))
-        while !requestAccessibilityTrust(prompt: false) || !inputMonitoringGranted() {
+        while !requestAccessibilityTrust(prompt: false) {
             Thread.sleep(forTimeInterval: 3)
         }
         FileHandle.standardError.write(Data(
-            "daemon: permissions granted — registering hotkey\n".utf8))
+            "daemon: Accessibility granted — registering hotkey\n".utf8))
     }
 
     // Signature "KWHK" (killwindow hotkey) — any stable 4-byte id is fine.

@@ -104,10 +104,10 @@ func runSetup(args: [String]) -> Never {
          The daemon starts under launchd, which registers killwindow with
          both Accessibility and Input Monitoring on first run.
 
-      2. Open Settings → Privacy & Security and toggle killwindow on in
-         BOTH panes (needed by CGEventTap on macOS 10.15+):
-           • Accessibility    — to consume clicks
-           • Input Monitoring — to listen to clicks
+      2. Open Settings → Privacy & Security → Accessibility and toggle
+         killwindow on. (Input Monitoring may or may not appear, but
+         isn't required — the Carbon hotkey works at the window-server
+         level and the click-mode event tap only needs Accessibility.)
 
       3. brew services restart killwindow
 
