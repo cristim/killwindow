@@ -54,6 +54,9 @@ func parseArgs() -> Options {
         case "-v", "--version":   print("killwindow \(killwindowVersion)"); exit(0)
         case "-h", "--help":      printHelp(); exit(0)
         default:
+            // Finder-launched .apps sometimes receive a legacy
+            // `-psn_0_1234` argument (Process Serial Number). Ignore it.
+            if arg.hasPrefix("-psn_") { continue }
             FileHandle.standardError.write(Data("unknown option: \(arg)\n".utf8))
             exit(2)
         }
