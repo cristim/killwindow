@@ -105,9 +105,7 @@ func runSetup(args: [String]) -> Never {
          both Accessibility and Input Monitoring on first run.
 
       2. Open Settings → Privacy & Security → Accessibility and toggle
-         killwindow on. (Input Monitoring may or may not appear, but
-         isn't required — the Carbon hotkey works at the window-server
-         level and the click-mode event tap only needs Accessibility.)
+         killwindow on. That's the only permission we need.
 
       3. brew services restart killwindow
 

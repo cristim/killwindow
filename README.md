@@ -5,7 +5,7 @@ A macOS [`xkill`](https://linux.die.net/man/1/xkill) equivalent: click a window 
 - Default: **SIGTERM** (graceful).
 - Hold **⌘** while clicking: **SIGKILL** (force).
 - Live preview: orange highlight + tooltip for SIGTERM, red for SIGKILL.
-- Press **Esc** to cancel.
+- **Right-click** (or press Esc) to cancel.
 
 ## Install
 

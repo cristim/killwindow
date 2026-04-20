@@ -106,12 +106,9 @@ jobs:
                 Background hotkey (default ⌃⌥⌘K, press anywhere):
                   brew services start killwindow
 
-                On first start the daemon registers killwindow with
-                System Settings → Privacy & Security. Toggle it on in
-                BOTH of these panes:
-                  • Accessibility    — to consume clicks
-                  • Input Monitoring — to listen to clicks
-                Then: brew services restart killwindow
+                On first start the daemon registers killwindow in
+                System Settings → Privacy & Security → Accessibility.
+                Toggle it on, then: brew services restart killwindow
 
                 Change the hotkey:
                   killwindow setup --hotkey 'ctrl+opt+cmd+k'

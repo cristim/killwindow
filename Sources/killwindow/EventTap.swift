@@ -3,6 +3,7 @@ import CoreGraphics
 
 let eventMask: CGEventMask =
     (1 << CGEventType.leftMouseDown.rawValue) |
+    (1 << CGEventType.rightMouseDown.rawValue) |
     (1 << CGEventType.mouseMoved.rawValue) |
     (1 << CGEventType.flagsChanged.rawValue) |
     (1 << CGEventType.keyDown.rawValue)

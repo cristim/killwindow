@@ -31,6 +31,12 @@ let callback: CGEventTapCallBack = { _, type, event, _ in
             return nil
         }
         return Unmanaged.passUnretained(event)
+    case .rightMouseDown:
+        // Right-click / two-finger trackpad tap cancels. We consume the
+        // event so the target app doesn't receive a context-menu request.
+        outcome = .cancelled
+        stopApp()
+        return nil
     case .mouseMoved:
         let loc = event.location
         let target = findWindow(at: loc, myPid: myPid, anyLayer: options.anyLayer, debug: false)
@@ -104,7 +110,7 @@ if let startLoc = CGEvent(source: nil)?.location {
     ui.update(at: startLoc, target: t, forceKill: forceKillNow(flags: flags, options: options))
 }
 
-print("click to terminate (SIGTERM) — hold ⌘ to force-kill (SIGKILL) — Esc to cancel")
+print("click to terminate (SIGTERM) — hold ⌘ to force-kill (SIGKILL) — right-click or Esc to cancel")
 NSApp.run()
 
 ui.hide()

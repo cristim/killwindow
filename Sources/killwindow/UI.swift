@@ -76,9 +76,9 @@ final class KillwindowUI {
 
         let text: String
         if forceKill {
-            text = "Force-kill \"\(target.app)\" (SIGKILL) — Esc to cancel"
+            text = "Force-kill \"\(target.app)\" (SIGKILL) — right-click to cancel"
         } else {
-            text = "Terminate \"\(target.app)\" (SIGTERM) — hold ⌘ to force kill — Esc to cancel"
+            text = "Terminate \"\(target.app)\" (SIGTERM) — hold ⌘ to force kill — right-click to cancel"
         }
         label.stringValue = text
         label.sizeToFit()
