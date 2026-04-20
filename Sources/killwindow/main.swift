@@ -21,6 +21,15 @@ if let sub = rawArgs.first {
 }
 
 let options = parseArgs()
+
+// Only one click-mode instance at a time — otherwise a rapid hotkey
+// press could stack overlays + event taps on top of each other.
+if tryAcquireLock(at: clickLockPath) < 0 {
+    FileHandle.standardError.write(Data(
+        "killwindow is already active — ignoring\n".utf8))
+    exit(0)
+}
+
 var outcome: Outcome = .cancelled
 var ui: KillwindowUI!
 

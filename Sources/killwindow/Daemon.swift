@@ -34,6 +34,15 @@ func runDaemon() -> Never {
     setbuf(stdout, nil)
     setbuf(stderr, nil)
 
+    // Only one daemon at a time. launchd enforces singletonness for its
+    // managed label, but a stray `killwindow daemon` from a terminal
+    // would collide on the Carbon hotkey registration.
+    if tryAcquireLock(at: daemonLockPath) < 0 {
+        FileHandle.standardError.write(Data(
+            "daemon: another killwindow daemon is already running — exiting\n".utf8))
+        exit(0)
+    }
+
     let spec = currentHotkey()
 
     _ = NSApplication.shared
