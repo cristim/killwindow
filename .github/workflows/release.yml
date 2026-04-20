@@ -81,6 +81,14 @@ jobs:
             app "killwindow.app"
             binary "#{appdir}/killwindow.app/Contents/MacOS/killwindow"
 
+            # Ad-hoc signed, not notarised — strip the quarantine xattr so
+            # Gatekeeper doesn't block first launch with the "cannot verify
+            # this app is free of malware" dialog.
+            preflight do
+              system_command "/usr/bin/xattr",
+                             args: ["-cr", staged_path/"killwindow.app"]
+            end
+
             uninstall launchctl: "com.cristim.killwindow"
 
             zap trash: [
