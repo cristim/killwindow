@@ -28,19 +28,13 @@ jobs:
         run: |
           set -euo pipefail
           VERSION="${GITHUB_REF#refs/tags/v}"
-          STAGE="killwindow-${VERSION}"
           TARBALL="killwindow-${VERSION}-macos.tar.gz"
 
-          # Wrap killwindow.app in a versioned directory. Homebrew's
-          # default stage auto-cd's into a single top-level entry of
-          # the tarball — without this wrapper it would cd into the
-          # .app itself, and the formula's prefix.install call would
-          # fail to locate 'killwindow.app'.
-          rm -rf "$STAGE"
-          mkdir -p "$STAGE"
-          cp -R build/killwindow.app "$STAGE/"
-          tar -czf "$TARBALL" "$STAGE"
-          rm -rf "$STAGE"
+          # Tarball root contains killwindow.app directly. This matches
+          # the cask's `app "killwindow.app"` stanza — casks extract
+          # into Caskroom/<name>/<version>/ without auto-cd'ing into a
+          # single top-level wrapper directory.
+          tar -czf "$TARBALL" -C build killwindow.app
 
           SHA=$(shasum -a 256 "$TARBALL" | awk '{print $1}')
           {
