@@ -11,6 +11,11 @@ if let sub = rawArgs.first {
     switch sub {
     case "daemon": runDaemon()
     case "setup":  runSetup(args: Array(rawArgs.dropFirst()))
+    case "ax-probe":
+        // Short-lived probe used by the daemon to check Accessibility
+        // state from a fresh process (TCC results cache per-process,
+        // so the daemon would never notice a mid-run grant otherwise).
+        exit(requestAccessibilityTrust(prompt: false) ? 0 : 1)
     default:       break  // fall through to one-shot kill mode
     }
 }

@@ -51,11 +51,28 @@ func runDaemon() -> Never {
         if killwindow isn't listed, click + and add: \(binary)
 
         """.utf8))
-        while !requestAccessibilityTrust(prompt: false) {
+        // Poll via a child `killwindow ax-probe` — TCC results cache
+        // per-process, so this running daemon would never notice a new
+        // grant if it checked in-process. When the child reports
+        // granted, exit(0); launchd's KeepAlive respawns us with a
+        // fresh process that'll see the grant on its first check.
+        while true {
             Thread.sleep(forTimeInterval: 3)
+            let probe = Process()
+            probe.executableURL = URL(fileURLWithPath: binary)
+            probe.arguments = ["ax-probe"]
+            do {
+                try probe.run()
+                probe.waitUntilExit()
+            } catch {
+                continue
+            }
+            if probe.terminationStatus == 0 {
+                FileHandle.standardError.write(Data(
+                    "daemon: Accessibility granted — exiting for a clean restart\n".utf8))
+                exit(0)
+            }
         }
-        FileHandle.standardError.write(Data(
-            "daemon: Accessibility granted — registering hotkey\n".utf8))
     }
 
     // Signature "KWHK" (killwindow hotkey) — any stable 4-byte id is fine.
