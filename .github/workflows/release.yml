@@ -59,7 +59,7 @@ jobs:
           gh release create "v${VERSION}" "${TARBALL}" \
             --title "v${VERSION}" --generate-notes
 
-      - name: Update Homebrew formula in tap
+      - name: Update Homebrew cask in tap
         env:
           TAP_TOKEN: ${{ secrets.TAP_TOKEN }}
           VERSION:   ${{ steps.pack.outputs.version }}
@@ -68,61 +68,52 @@ jobs:
           set -euo pipefail
           git clone "https://x-access-token:${TAP_TOKEN}@github.com/${TAP_OWNER}/${TAP_REPO}.git" tap
           cd tap
-          mkdir -p Formula
-          cat > "Formula/${FORMULA_NAME}.rb" <<EOF
-          class Killwindow < Formula
-            desc "macOS xkill: click a window to SIGTERM/SIGKILL its owning process"
-            homepage "https://github.com/${TAP_OWNER}/killwindow"
-            url "https://github.com/${TAP_OWNER}/killwindow/releases/download/v${VERSION}/killwindow-${VERSION}-macos.tar.gz"
-            sha256 "${SHA256}"
-            license "MIT"
+
+          # Move from formula → cask distribution. Remove any stale formula
+          # file so `brew install cristim/tap/killwindow` resolves to the
+          # cask (casks live in Casks/, formulas in Formula/).
+          rm -f "Formula/${FORMULA_NAME}.rb"
+          mkdir -p Casks
+          cat > "Casks/${FORMULA_NAME}.rb" <<EOF
+          cask "killwindow" do
             version "${VERSION}"
+            sha256 "${SHA256}"
 
-            depends_on :macos
+            url "https://github.com/${TAP_OWNER}/killwindow/releases/download/v#{version}/killwindow-#{version}-macos.tar.gz"
+            name "killwindow"
+            desc "Click a window to kill its owning process (macOS xkill)"
+            homepage "https://github.com/${TAP_OWNER}/killwindow"
 
-            def install
-              # Tarball stages a killwindow-<version>/ directory whose
-              # only child is killwindow.app. Homebrew auto-cd's into
-              # that wrapper, so killwindow.app is in CWD.
-              prefix.install "killwindow.app"
-              bin.install_symlink prefix/"killwindow.app/Contents/MacOS/killwindow"
-            end
+            app "killwindow.app"
+            binary "#{appdir}/killwindow.app/Contents/MacOS/killwindow"
 
-            service do
-              run [opt_prefix/"killwindow.app/Contents/MacOS/killwindow", "daemon"]
-              keep_alive true
-              log_path var/"log/killwindow.log"
-              error_log_path var/"log/killwindow.log"
-            end
+            uninstall launchctl: "com.cristim.killwindow"
 
-            def caveats
-              <<~CAVEATS
-                killwindow — click a window to kill it.
+            zap trash: [
+              "~/Library/Application Support/killwindow",
+              "~/Library/LaunchAgents/com.cristim.killwindow.plist",
+              "/tmp/killwindow.log",
+            ]
 
-                One-off from terminal:
-                  killwindow                  # click to SIGTERM
-                  killwindow -h               # full help
+            caveats <<~CAVEATS
+              killwindow — click a window to kill it.
 
-                Background hotkey (default ⌃⌥⌘K, press anywhere):
-                  brew services start killwindow
+              One-off from terminal:
+                killwindow                      # click to SIGTERM
+                killwindow -h                   # full help
 
-                On first start the daemon registers killwindow in
-                System Settings → Privacy & Security → Accessibility.
-                Toggle it on, then: brew services restart killwindow
+              Grant Accessibility and enable the background hotkey
+              daemon (default ⌃⌥⌘K):
+                killwindow setup
+                killwindow setup --enable-daemon
 
-                Change the hotkey:
-                  killwindow setup --hotkey 'ctrl+opt+cmd+k'
-                  brew services restart killwindow
-              CAVEATS
-            end
-
-            test do
-              assert_match "killwindow", shell_output("#{bin}/killwindow --help")
-            end
+              The Accessibility grant persists across upgrades because the
+              .app's bundle ID (com.cristim.killwindow) stays constant.
+            CAVEATS
           end
           EOF
           git config user.name  "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add "Formula/${FORMULA_NAME}.rb"
+          git add -A
           git commit -m "killwindow ${VERSION}"
           git push

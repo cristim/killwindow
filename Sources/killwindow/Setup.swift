@@ -16,16 +16,19 @@ func requestAccessibilityTrust(prompt: Bool) -> Bool {
 
 func printSetupHelp() {
     print("""
-    killwindow setup — grant Accessibility and configure the hotkey
+    killwindow setup — grant Accessibility, manage the hotkey daemon
 
     usage: killwindow setup [options]
 
     options:
-      --hotkey <spec>   set the daemon hotkey (e.g. 'ctrl+opt+cmd+k')
-                        modifiers: ctrl, opt, cmd, shift
-                        keys: a-z, 0-9, f1-f12, space, return, tab,
-                              delete, escape, left, right, up, down, ...
-      -h, --help        show this help
+      --hotkey <spec>    set the daemon hotkey (e.g. 'ctrl+opt+cmd+k')
+                         modifiers: ctrl, opt, cmd, shift
+                         keys: a-z, 0-9, f1-f12, space, return, tab,
+                               delete, escape, left, right, up, down, ...
+      --enable-daemon    install and start the background LaunchAgent
+                         (auto-launches on login; runs the hotkey daemon)
+      --disable-daemon   stop and remove the LaunchAgent
+      -h, --help         show this help
 
     with no options, prints the current hotkey and opens
     System Settings → Privacy & Security → Accessibility so you can
@@ -35,6 +38,8 @@ func printSetupHelp() {
 
 func runSetup(args: [String]) -> Never {
     var hotkeyStr: String?
+    var enable = false
+    var disable = false
     var i = 0
     while i < args.count {
         switch args[i] {
@@ -49,11 +54,31 @@ func runSetup(args: [String]) -> Never {
             hotkeyStr = args[i + 1]
             i += 2
             continue
+        case "--enable-daemon":
+            enable = true
+            i += 1
+            continue
+        case "--disable-daemon":
+            disable = true
+            i += 1
+            continue
         default:
             FileHandle.standardError.write(
                 Data("setup: unknown option: \(args[i])\n".utf8))
             exit(2)
         }
+    }
+
+    if disable {
+        disableDaemon()
+        exit(0)
+    }
+    if enable {
+        do { try enableDaemon() } catch {
+            FileHandle.standardError.write(Data("setup: \(error)\n".utf8))
+            exit(1)
+        }
+        exit(0)
     }
 
     if let s = hotkeyStr {
@@ -86,18 +111,21 @@ func runSetup(args: [String]) -> Never {
 
     To enable the background hotkey (\(formatHotkey(current))):
 
-      1. brew services start killwindow
+      1. killwindow setup --enable-daemon
 
-         The daemon starts under launchd, which registers killwindow with
-         both Accessibility and Input Monitoring on first run.
+         Installs and bootstraps a LaunchAgent at
+         ~/Library/LaunchAgents/com.cristim.killwindow.plist.
 
       2. Open Settings → Privacy & Security → Accessibility and toggle
          killwindow on. That's the only permission we need.
 
-      3. brew services restart killwindow
+      3. killwindow setup --enable-daemon
 
-         The daemon picks up the new permissions and the hotkey starts
-         working globally.
+         Re-run to re-bootstrap so the daemon picks up the grant, or
+         (equivalently) sign out / sign in.
+
+    Disable the daemon:
+      killwindow setup --disable-daemon
 
     Change the hotkey:
       killwindow setup --hotkey 'ctrl+opt+cmd+k'

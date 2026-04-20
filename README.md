@@ -10,15 +10,17 @@ A macOS [`xkill`](https://linux.die.net/man/1/xkill) equivalent: click a window 
 ## Install
 
 ```sh
-brew tap cristim/tap
-brew install killwindow
-killwindow setup          # opens Accessibility pane, shows/sets hotkey
+brew install --cask cristim/tap/killwindow
+killwindow setup                     # opens Accessibility pane
+killwindow setup --enable-daemon     # optional: global hotkey ⌃⌥⌘K
 ```
+
+The cask installs `killwindow.app` to `/Applications` (Spotlight-searchable), symlinks the CLI at `/opt/homebrew/bin/killwindow`, and keeps the Accessibility grant stable across upgrades via the bundle ID `com.cristim.killwindow`.
 
 ## Requirements
 
 - macOS 11+
-- **Accessibility permission** for the `killwindow` binary (and for the terminal that launches it, if you run it from a shell). Without it, the event tap cannot capture your click.
+- **Accessibility permission** for `killwindow.app`. Grant it in System Settings → Privacy & Security → Accessibility.
 
 ## Usage
 
@@ -33,13 +35,14 @@ killwindow -h              # help
 
 ### Background hotkey daemon
 
-`killwindow daemon` registers a global hotkey (default **⌃⌥⌘K**) that fires a click-to-kill session from anywhere. Manage it with `brew services`:
+`killwindow daemon` registers a global hotkey (default **⌃⌥⌘K**) that fires a click-to-kill session from anywhere. Manage it via the LaunchAgent helpers:
 
 ```sh
-brew services start killwindow            # start at login, running now
-brew services stop killwindow
-brew services restart killwindow          # after changing the hotkey
+killwindow setup --enable-daemon          # install + start LaunchAgent
+killwindow setup --disable-daemon         # remove it
 ```
+
+Log: `/tmp/killwindow.log`.
 
 ### Configure the hotkey
 
@@ -47,7 +50,7 @@ brew services restart killwindow          # after changing the hotkey
 killwindow setup                          # print current hotkey + open Accessibility
 killwindow setup --hotkey 'ctrl+opt+cmd+k'
 killwindow setup --hotkey 'shift+cmd+f13'
-brew services restart killwindow          # apply
+killwindow setup --enable-daemon          # re-bootstrap the agent to apply
 ```
 
 Config is stored at `~/Library/Application Support/killwindow/config.json`. Modifiers: `ctrl`, `opt`, `cmd`, `shift`. Keys: `a–z`, `0–9`, `f1–f12`, `space`, `return`, `tab`, `delete`, `escape`, arrows.
