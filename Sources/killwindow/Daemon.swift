@@ -40,12 +40,9 @@ func runDaemon() -> Never {
     NSApp.setActivationPolicy(.accessory)
     NSApp.finishLaunching()
 
-    // CGEventTap in the spawned click-mode needs Accessibility. Input
-    // Monitoring helps on some macOS configurations but isn't mandatory,
-    // and bundle registration in the IM pane fails for some setups —
-    // don't block on it. Fire the IOHID request once at startup so macOS
-    // can register the bundle there if it wants to, but gate only on AX.
-    _ = requestInputMonitoring()
+    // CGEventTap in the spawned click-mode needs Accessibility only —
+    // the Carbon hotkey runs at the window-server level and doesn't
+    // require Input Monitoring, so we don't ask for it.
     let binary = Bundle.main.executablePath ?? "/opt/homebrew/bin/killwindow"
     if !requestAccessibilityTrust(prompt: true) {
         FileHandle.standardError.write(Data("""

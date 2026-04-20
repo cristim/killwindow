@@ -1,30 +1,17 @@
 import AppKit
 import ApplicationServices
 import Foundation
-import IOKit.hid
 
-// Ask macOS for Accessibility permission (needed for CGEventTap to
-// consume/modify events). prompt=true registers the current binary in
-// the Accessibility list and triggers the system's own grant dialog.
+// Ask macOS for Accessibility permission — the only permission
+// killwindow needs. CGEventTap with .defaultTap is allowed to observe
+// and modify events with this grant alone (the Carbon hotkey path
+// needs no TCC permission at all). prompt=true registers the current
+// binary in the Accessibility list and triggers the system dialog.
 @discardableResult
 func requestAccessibilityTrust(prompt: Bool) -> Bool {
     let key = kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String
     let opts = [key: prompt] as CFDictionary
     return AXIsProcessTrustedWithOptions(opts)
-}
-
-// Ask macOS for Input Monitoring permission (needed for CGEventTap to
-// LISTEN to events on macOS 10.15+). IOHIDRequestAccess always triggers
-// the system prompt on first call and registers the binary in the
-// Input Monitoring list. Returns true if already granted.
-@discardableResult
-func requestInputMonitoring() -> Bool {
-    return IOHIDRequestAccess(kIOHIDRequestTypeListenEvent)
-}
-
-// Non-prompting status check for polling loops.
-func inputMonitoringGranted() -> Bool {
-    IOHIDCheckAccess(kIOHIDRequestTypeListenEvent) == kIOHIDAccessTypeGranted
 }
 
 func printSetupHelp() {
