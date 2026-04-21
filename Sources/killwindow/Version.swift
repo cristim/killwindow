@@ -1,2 +1,2 @@
 // Bumped at release time. Keep in sync with the tag you push to origin.
-let killwindowVersion = "0.4.5"
+let killwindowVersion = "0.4.6"

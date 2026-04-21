@@ -89,6 +89,23 @@ jobs:
                              args: ["-cr", staged_path/"killwindow.app"]
             end
 
+            # Ad-hoc signing ties the TCC grant to the binary's cdhash,
+            # which changes on every release. After the upgrade, reset
+            # our Accessibility entry so the new daemon can register a
+            # fresh one, and re-bootstrap the user's LaunchAgent (if
+            # they have it enabled) so it picks up the new binary.
+            postflight do
+              system_command "/usr/bin/tccutil",
+                             args: ["reset", "Accessibility", "com.cristim.killwindow"]
+              plist = File.expand_path("~/Library/LaunchAgents/com.cristim.killwindow.plist")
+              if File.exist?(plist)
+                system_command "/bin/launchctl",
+                               args: ["bootout", "gui/#{Process.uid}", plist]
+                system_command "/bin/launchctl",
+                               args: ["bootstrap", "gui/#{Process.uid}", plist]
+              end
+            end
+
             uninstall launchctl: "com.cristim.killwindow"
 
             zap trash: [
