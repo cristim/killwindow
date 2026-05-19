@@ -54,32 +54,110 @@ let callback: CGEventTapCallBack = { _, type, event, _ in
     case .mouseMoved:
         let loc = event.location
         let target = findWindow(at: loc, myPid: myPid, anyLayer: options.anyLayer, debug: false)
-        ui?.update(at: loc, target: target,
-                   forceKill: forceKillNow(flags: event.flags, options: options))
+        let flags = event.flags
+        ui?.update(
+            at: loc,
+            target: target,
+            forceKill: forceKillNow(flags: flags, options: options),
+            closeWindow: closeWindowNow(flags: flags, options: options),
+            forceKillSystem: options.forceKillSystem
+        )
         return Unmanaged.passUnretained(event)
     case .flagsChanged:
-        // ⌘ pressed/released — re-paint UI without the user moving the mouse.
+        // ⌘/⌥ pressed/released — re-paint UI without the user moving the mouse.
         let loc = CGEvent(source: nil)?.location ?? event.location
         let target = findWindow(at: loc, myPid: myPid, anyLayer: options.anyLayer, debug: false)
-        ui?.update(at: loc, target: target,
-                   forceKill: forceKillNow(flags: event.flags, options: options))
+        let flags = event.flags
+        ui?.update(
+            at: loc,
+            target: target,
+            forceKill: forceKillNow(flags: flags, options: options),
+            closeWindow: closeWindowNow(flags: flags, options: options),
+            forceKillSystem: options.forceKillSystem
+        )
         return Unmanaged.passUnretained(event)
     case .leftMouseDown:
         let loc = event.location
-        let sig: Int32 = forceKillNow(flags: event.flags, options: options) ? SIGKILL : SIGTERM
-        if let target = findWindow(at: loc, myPid: myPid,
+        let flags = event.flags
+        let fk = forceKillNow(flags: flags, options: options)
+        let cw = closeWindowNow(flags: flags, options: options)
+
+        if var target = findWindow(at: loc, myPid: myPid,
                                    anyLayer: options.anyLayer, debug: options.debug) {
-            if options.dryRun {
-                outcome = .dryRun(target, sig)
-            } else if target.pid > 0 {
-                let rc = kill(target.pid, sig)
-                if rc == 0 {
-                    outcome = .killed(target, sig)
-                } else {
-                    outcome = .killFailed(target, String(cString: strerror(errno)))
+            // AX subrole probe: upgrade .normal -> .dialog if the focused window
+            // has a dialog/sheet subrole (or is an AXSheet by role). Only runs on
+            // .normal targets (layer 0) since popovers are already classified by
+            // owner. AX probe failure falls back to .normal — never crashes.
+            if target.kind == .normal {
+                if let (role, subrole) = probeDialogSubrole(pid: target.pid, targetBounds: target.bounds) {
+                    // AXDialog and AXSystemDialog are subroles of AXWindow.
+                    // AXSheet is a top-level role (not a subrole), so probe both.
+                    let isDialog =
+                        subrole == (kAXDialogSubrole as String) ||
+                        subrole == (kAXSystemDialogSubrole as String) ||
+                        role    == (kAXSheetRole as String)
+                    if isDialog {
+                        target = Target(
+                            pid: target.pid,
+                            app: target.app,
+                            title: target.title,
+                            windowID: target.windowID,
+                            bounds: target.bounds,
+                            kind: .dialog
+                        )
+                    }
                 }
+            }
+
+            let strategy = chooseStrategy(
+                target: target,
+                forceKill: fk,
+                closeWindow: cw,
+                forceKillSystem: options.forceKillSystem
+            )
+
+            if options.dryRun {
+                // Dry-run: print what would happen, then exit cleanly.
+                let description: String
+                switch strategy {
+                case .signal(let sig):
+                    description = "would send \(signalName(sig)) to \(describe(target))"
+                case .axClose:
+                    description = "would close window (AX) of \(describe(target))"
+                case .escapeKey:
+                    description = "would dismiss popover of \(describe(target)) via Escape"
+                case .refusedProtected:
+                    description = "would refuse — \(target.app) is protected (pass --force-kill-system to override)"
+                }
+                print(description)
+                outcome = .dryRunDone
             } else {
-                outcome = .killFailed(target, "no pid on window")
+                // Live dispatch.
+                switch strategy {
+                case .signal(let sig):
+                    if target.pid > 0 {
+                        let rc = kill(target.pid, sig)
+                        if rc == 0 {
+                            outcome = .killed(target, sig)
+                        } else {
+                            outcome = .killFailed(target, String(cString: strerror(errno)))
+                        }
+                    } else {
+                        outcome = .killFailed(target, "no pid on window")
+                    }
+                case .axClose:
+                    if performAxClose(target: target) {
+                        outcome = .closed(target)
+                    } else {
+                        outcome = .closeFailed(target, "AX close failed (check Accessibility permission)")
+                    }
+                case .escapeKey:
+                    postEscape()
+                    outcome = .dismissed(target)
+                case .refusedProtected:
+                    outcome = .killFailed(target,
+                        "\(target.app) is protected from SIGKILL — pass --force-kill-system to override")
+                }
             }
         } else {
             outcome = .noWindow
@@ -121,10 +199,16 @@ ui = KillwindowUI()
 if let startLoc = CGEvent(source: nil)?.location {
     let t = findWindow(at: startLoc, myPid: myPid, anyLayer: options.anyLayer, debug: false)
     let flags = CGEvent(source: nil)?.flags ?? []
-    ui.update(at: startLoc, target: t, forceKill: forceKillNow(flags: flags, options: options))
+    ui.update(
+        at: startLoc,
+        target: t,
+        forceKill: forceKillNow(flags: flags, options: options),
+        closeWindow: closeWindowNow(flags: flags, options: options),
+        forceKillSystem: options.forceKillSystem
+    )
 }
 
-print("click to terminate (SIGTERM) — hold ⌘ to force-kill (SIGKILL) — right-click or Esc to cancel")
+print("click to terminate (SIGTERM) — hold ⌘ to force-kill (SIGKILL) — hold ⌥ to close window (AX) — right-click or Esc to cancel")
 NSApp.run()
 
 ui.hide()
@@ -132,13 +216,21 @@ ui.hide()
 switch outcome {
 case .killed(let t, let sig):
     print("sent \(signalName(sig)) to \(describe(t))")
-case .dryRun(let t, let sig):
-    print("would send \(signalName(sig)) to \(describe(t))")
+case .closed(let t):
+    print("closed window of \(describe(t))")
+case .dismissed(let t):
+    print("dismissed popover of \(describe(t))")
+case .closeFailed(let t, let msg):
+    FileHandle.standardError.write(Data("close failed for \(describe(t)): \(msg)\n".utf8))
+    exit(1)
 case .noWindow:
     FileHandle.standardError.write(Data("no window at click location\n".utf8))
     exit(1)
 case .cancelled:
     print("cancelled")
+case .dryRunDone:
+    // dry-run message already printed inline at click time
+    break
 case .killFailed(let t, let msg):
     FileHandle.standardError.write(Data("kill failed for \(describe(t)): \(msg)\n".utf8))
     exit(1)

@@ -3,7 +3,7 @@ import Foundation
 
 // Never target these — Window Server owns the cursor sprite (always under the
 // click) and killing it signs the user out.
-let protectedOwners: Set<String> = ["Window Server"]
+let neverTarget: Set<String> = ["Window Server"]
 
 func findWindow(at point: CGPoint, myPid: pid_t, anyLayer: Bool, debug: Bool) -> Target? {
     let opts: CGWindowListOption = [.optionOnScreenOnly, .excludeDesktopElements]
@@ -36,17 +36,35 @@ func findWindow(at point: CGPoint, myPid: pid_t, anyLayer: Bool, debug: Bool) ->
         let app = (win[kCGWindowOwnerName as String] as? String) ?? "?"
         let title = (win[kCGWindowName as String] as? String) ?? ""
 
+        // Compute kind from CGWindowList-only info.
+        // Dialogs start as .normal here; the AX subrole probe in leftMouseDown
+        // upgrades them to .dialog at click time.
+        let kind: WindowKind
+        if layer == 0 {
+            kind = .normal
+        } else if sacrificialOwners.contains(app) {
+            kind = .popoverSacrificial
+        } else if escapeOwners.contains(app) {
+            kind = .popoverEscape
+        } else {
+            kind = .popoverUnknown
+        }
+
         if debug && hit {
             FileHandle.standardError.write(Data(
-                "  hit: layer=\(layer) bounds=(\(bounds.origin.x),\(bounds.origin.y) \(bounds.width)x\(bounds.height)) app=\(app) title=\"\(title)\"\n".utf8))
+                "  hit: layer=\(layer) bounds=(\(bounds.origin.x),\(bounds.origin.y) \(bounds.width)x\(bounds.height)) app=\(app) title=\"\(title)\" kind=\(kind)\n".utf8))
         }
 
         let pid = (win[kCGWindowOwnerPID as String] as? pid_t) ?? 0
-        let layerOK = anyLayer ? true : (layer == 0)
+        // Layer eligibility:
+        // - anyLayer: match every layer
+        // - layer == 0: normal app window
+        // - layer > 0 and owner in popoverOwners: a popover we know how to handle
+        let layerOK = anyLayer || layer == 0 || popoverOwners.contains(app)
         // Skip our own tooltip/highlight so we never target ourselves.
-        if result == nil, hit, layerOK, pid != myPid, !protectedOwners.contains(app) {
+        if result == nil, hit, layerOK, pid != myPid, !neverTarget.contains(app) {
             let wid = (win[kCGWindowNumber as String] as? CGWindowID) ?? 0
-            result = Target(pid: pid, app: app, title: title, windowID: wid, bounds: bounds)
+            result = Target(pid: pid, app: app, title: title, windowID: wid, bounds: bounds, kind: kind)
             if !debug { break }
         }
     }
