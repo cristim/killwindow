@@ -39,6 +39,23 @@ func findMatchingAXWindow(pid: pid_t, bounds: CGRect) -> AXUIElement? {
     return nil
 }
 
+// Convenience wrapper around `probeDialogSubrole`: returns the WindowKind
+// that the CGWindowList-classified `.normal` target should be upgraded to.
+// Returns `.dialog` when AX reports an AXDialog/AXSystemDialog subrole or an
+// AXSheet role; returns `.normal` otherwise (including probe failure). Shared
+// by both the live-preview path (via ProbeCache) and the click-dispatch path
+// so the rendered action always matches the executed one.
+func classifyForDialogUpgrade(pid: pid_t, bounds: CGRect) -> WindowKind {
+    guard let (role, subrole) = probeDialogSubrole(pid: pid, targetBounds: bounds) else {
+        return .normal
+    }
+    let isDialog =
+        subrole == (kAXDialogSubrole as String) ||
+        subrole == (kAXSystemDialogSubrole as String) ||
+        role    == (kAXSheetRole as String)
+    return isDialog ? .dialog : .normal
+}
+
 // Probes the AX role and subrole of the window matching `targetBounds`. Used
 // to upgrade `.normal` (CGWindowList classification) to `.dialog` at click
 // time when the window is actually an AXDialog/AXSystemDialog or has role
@@ -91,7 +108,9 @@ private func axBoundsMatch(_ element: AXUIElement, _ bounds: CGRect) -> Bool {
 // Attempts to AX-close the window matching `target.bounds` (NOT the focused
 // window, unless they happen to match — see findMatchingAXWindow). Strategy:
 //   1. Try kAXCancelAction (relevant for AXDialog with a Cancel button).
-//   2. Find an AXCloseButton child and perform kAXPressAction on it.
+//   2. Read the standard kAXCloseButtonAttribute on the window and press it
+//      (Apple's documented way to obtain the close button).
+//   3. Fall back to scanning kAXChildrenAttribute for an AXCloseButton subrole.
 // Returns true on first success, false on all-fail or no-match.
 // AX failures are silent — caller decides the fallback.
 func performAxClose(target: Target) -> Bool {
@@ -101,9 +120,21 @@ func performAxClose(target: Target) -> Bool {
     let cancelResult = AXUIElementPerformAction(window, kAXCancelAction as CFString)
     if cancelResult == .success { return true }
 
-    // 2. Find an AXCloseButton child (subrole kAXCloseButtonSubrole) and press it.
-    // There is no public kAXCloseAction constant for windows; the standard approach
-    // is to locate the close button child element and press it.
+    // 2. Standard close-button attribute on the window. Apple's documented
+    // approach. There is no public kAXCloseAction constant for windows;
+    // press the AXCloseButton element via kAXPressAction.
+    var closeButtonRef: CFTypeRef?
+    if AXUIElementCopyAttributeValue(window, kAXCloseButtonAttribute as CFString, &closeButtonRef) == .success,
+       let closeButtonRef {
+        let closeButton = closeButtonRef as! AXUIElement
+        if AXUIElementPerformAction(closeButton, kAXPressAction as CFString) == .success {
+            return true
+        }
+    }
+
+    // 3. Fall back to scanning immediate children for an AXCloseButton subrole.
+    // Some dialogs/sheets expose the close button as a child element rather
+    // than through kAXCloseButtonAttribute.
     var childrenRef: CFTypeRef?
     let childrenErr = AXUIElementCopyAttributeValue(
         window, kAXChildrenAttribute as CFString, &childrenRef)

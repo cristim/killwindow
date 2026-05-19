@@ -17,6 +17,30 @@ func signalName(_ s: Int32) -> String {
     }
 }
 
+// One-line prompt printed when click-mode starts. Reflects the active
+// CLI flags so `-k` and `-c` users don't see misleading SIGTERM/⌥ hints.
+func startupBanner(options: Options) -> String {
+    let primary: String
+    if options.signal == SIGKILL {
+        primary = "force-kill (SIGKILL)"
+    } else if options.closeWindow {
+        primary = "AX-close the window"
+    } else {
+        primary = "terminate (SIGTERM)"
+    }
+
+    var hints: [String] = []
+    if options.signal != SIGKILL {
+        hints.append("hold ⌘ to force-kill (SIGKILL)")
+    }
+    if !options.closeWindow {
+        hints.append("hold ⌥ to AX-close the window")
+    }
+    hints.append("right-click or Esc to cancel")
+
+    return "click to \(primary) — \(hints.joined(separator: " — "))"
+}
+
 func printHelp() {
     print("""
     killwindow — click a window to kill its owning process

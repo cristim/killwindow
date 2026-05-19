@@ -82,7 +82,7 @@ The Dock is deliberately excluded from auto-discovery: its on-screen surface is 
 
 When you click on a dialog or sheet, killwindow uses the Accessibility API to close just that window. The parent application is unaffected. If AX close fails (e.g. Accessibility permission not granted or the dialog has no close button), the error is reported with exit code 1 — there is no silent fallback to SIGTERM.
 
-Re-click without `-c` / ⌥ to use the default strategy (SIGTERM) if AX close fails.
+AX close is the default for dialogs/sheets; SIGTERM is the default for normal windows. If AX close on a dialog doesn't dismiss it, re-clicking without `-c` / ⌥ falls back to SIGTERM (the normal-window default).
 
 ### Background hotkey daemon
 

@@ -33,6 +33,66 @@ if tryAcquireLock(at: clickLockPath) < 0 {
 var outcome: Outcome = .cancelled
 var ui: KillwindowUI!
 
+// Cache of AX dialog/sheet upgrade results so the live preview tooltip stays
+// aligned with the click-time dispatch without re-probing on every event.
+// Filled asynchronously on first hover; consulted synchronously on click.
+let probeCache = ProbeCache()
+
+// Latest cursor location seen by the tap. Read by the async-probe callback
+// to re-render the tooltip when a probe completes while the cursor is still
+// on the same window (otherwise a stationary cursor would never pick up the
+// upgrade since mouseMoved wouldn't fire again).
+var lastCursorLoc: CGPoint = .zero
+
+// Resolve the kind the UI/dispatch should use, consulting the cache. A
+// `.normal` target stays `.normal` until the AX probe upgrades it.
+func resolvedKind(for target: Target) -> WindowKind {
+    if target.kind != .normal { return target.kind }
+    return probeCache.get(pid: target.pid, windowID: target.windowID) ?? .normal
+}
+
+// Returns a Target with `kind` replaced by the resolved kind.
+func targetWithResolvedKind(_ target: Target) -> Target {
+    let kind = resolvedKind(for: target)
+    if kind == target.kind { return target }
+    return Target(pid: target.pid, app: target.app, title: target.title,
+                  windowID: target.windowID, bounds: target.bounds, kind: kind)
+}
+
+// Kick an asynchronous AX probe for `target` if its kind isn't cached yet.
+// When the probe completes, the result is cached AND (if the probe upgraded
+// the kind) a UI refresh is scheduled on the main run loop so a stationary
+// cursor still picks up the new tooltip.
+func kickProbeIfNeeded(target: Target) {
+    guard target.kind == .normal else { return }
+    if probeCache.get(pid: target.pid, windowID: target.windowID) != nil { return }
+    let pid = target.pid
+    let windowID = target.windowID
+    let bounds = target.bounds
+    DispatchQueue.global(qos: .userInteractive).async {
+        let kind = classifyForDialogUpgrade(pid: pid, bounds: bounds)
+        probeCache.set(pid: pid, windowID: windowID, kind: kind)
+        guard kind == .dialog else { return }
+        DispatchQueue.main.async { refreshTooltipAtCurrentCursor() }
+    }
+}
+
+// Re-render the UI overlay using the current cursor location and the
+// cache-resolved kind. Called from the async-probe completion handler.
+func refreshTooltipAtCurrentCursor() {
+    let loc = lastCursorLoc
+    let flags = CGEvent(source: nil)?.flags ?? []
+    let target = findWindow(at: loc, myPid: myPid, anyLayer: options.anyLayer, debug: false)
+    let resolved = target.map(targetWithResolvedKind)
+    ui?.update(
+        at: loc,
+        target: resolved,
+        forceKill: forceKillNow(flags: flags, options: options),
+        closeWindow: closeWindowNow(flags: flags, options: options),
+        forceKillSystem: options.forceKillSystem
+    )
+}
+
 let callback: CGEventTapCallBack = { _, type, event, _ in
     switch type {
     case .tapDisabledByTimeout, .tapDisabledByUserInput:
@@ -53,28 +113,34 @@ let callback: CGEventTapCallBack = { _, type, event, _ in
         return nil
     case .mouseMoved:
         let loc = event.location
+        lastCursorLoc = loc
         let target = findWindow(at: loc, myPid: myPid, anyLayer: options.anyLayer, debug: false)
+        let resolved = target.map(targetWithResolvedKind)
         let flags = event.flags
         ui?.update(
             at: loc,
-            target: target,
+            target: resolved,
             forceKill: forceKillNow(flags: flags, options: options),
             closeWindow: closeWindowNow(flags: flags, options: options),
             forceKillSystem: options.forceKillSystem
         )
+        if let target { kickProbeIfNeeded(target: target) }
         return Unmanaged.passUnretained(event)
     case .flagsChanged:
         // ⌘/⌥ pressed/released — re-paint UI without the user moving the mouse.
         let loc = CGEvent(source: nil)?.location ?? event.location
+        lastCursorLoc = loc
         let target = findWindow(at: loc, myPid: myPid, anyLayer: options.anyLayer, debug: false)
+        let resolved = target.map(targetWithResolvedKind)
         let flags = event.flags
         ui?.update(
             at: loc,
-            target: target,
+            target: resolved,
             forceKill: forceKillNow(flags: flags, options: options),
             closeWindow: closeWindowNow(flags: flags, options: options),
             forceKillSystem: options.forceKillSystem
         )
+        if let target { kickProbeIfNeeded(target: target) }
         return Unmanaged.passUnretained(event)
     case .leftMouseDown:
         let loc = event.location
@@ -84,28 +150,25 @@ let callback: CGEventTapCallBack = { _, type, event, _ in
 
         if var target = findWindow(at: loc, myPid: myPid,
                                    anyLayer: options.anyLayer, debug: options.debug) {
-            // AX subrole probe: upgrade .normal -> .dialog if the focused window
-            // has a dialog/sheet subrole (or is an AXSheet by role). Only runs on
-            // .normal targets (layer 0) since popovers are already classified by
-            // owner. AX probe failure falls back to .normal — never crashes.
+            // Resolve via cache first (filled asynchronously while the user
+            // hovered), then fall back to a synchronous AX probe if the user
+            // clicked before the cache warmed up. Either way the click-time
+            // kind matches what the tooltip showed.
             if target.kind == .normal {
-                if let (role, subrole) = probeDialogSubrole(pid: target.pid, targetBounds: target.bounds) {
-                    // AXDialog and AXSystemDialog are subroles of AXWindow.
-                    // AXSheet is a top-level role (not a subrole), so probe both.
-                    let isDialog =
-                        subrole == (kAXDialogSubrole as String) ||
-                        subrole == (kAXSystemDialogSubrole as String) ||
-                        role    == (kAXSheetRole as String)
-                    if isDialog {
-                        target = Target(
-                            pid: target.pid,
-                            app: target.app,
-                            title: target.title,
-                            windowID: target.windowID,
-                            bounds: target.bounds,
-                            kind: .dialog
-                        )
-                    }
+                let cached = probeCache.get(pid: target.pid, windowID: target.windowID)
+                let kind = cached ?? classifyForDialogUpgrade(pid: target.pid, bounds: target.bounds)
+                if cached == nil {
+                    probeCache.set(pid: target.pid, windowID: target.windowID, kind: kind)
+                }
+                if kind != .normal {
+                    target = Target(
+                        pid: target.pid,
+                        app: target.app,
+                        title: target.title,
+                        windowID: target.windowID,
+                        bounds: target.bounds,
+                        kind: kind
+                    )
                 }
             }
 
@@ -197,18 +260,21 @@ activateApp()
 ui = KillwindowUI()
 
 if let startLoc = CGEvent(source: nil)?.location {
+    lastCursorLoc = startLoc
     let t = findWindow(at: startLoc, myPid: myPid, anyLayer: options.anyLayer, debug: false)
+    let resolved = t.map(targetWithResolvedKind)
     let flags = CGEvent(source: nil)?.flags ?? []
     ui.update(
         at: startLoc,
-        target: t,
+        target: resolved,
         forceKill: forceKillNow(flags: flags, options: options),
         closeWindow: closeWindowNow(flags: flags, options: options),
         forceKillSystem: options.forceKillSystem
     )
+    if let t { kickProbeIfNeeded(target: t) }
 }
 
-print("click to terminate (SIGTERM) — hold ⌘ to force-kill (SIGKILL) — hold ⌥ to close window (AX) — right-click or Esc to cancel")
+print(startupBanner(options: options))
 NSApp.run()
 
 ui.hide()
