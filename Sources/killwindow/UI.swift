@@ -14,11 +14,17 @@ final class RoundedBGView: NSView {
     required init?(coder: NSCoder) { fatalError() }
 }
 
-// Two floating windows: a tint that hugs the target's bounds (orange for
-// SIGTERM, red for SIGKILL), and a tooltip near the cursor naming the target.
+// Two floating windows: a tint that hugs the target's bounds, and a tooltip
+// near the cursor naming the target and the action.
+//
+// Tint colours:
+//   orange  — recoverable action (SIGTERM, AX-close, Escape)
+//   red     — destructive action (SIGKILL)
+//   grey    — refused (protected-from-SIGKILL without --force-kill-system)
 final class KillwindowUI {
-    static let sigtermColor = NSColor(calibratedRed: 1.00, green: 0.55, blue: 0.00, alpha: 0.30)
-    static let sigkillColor = NSColor(calibratedRed: 1.00, green: 0.00, blue: 0.00, alpha: 0.30)
+    static let sigtermColor    = NSColor(calibratedRed: 1.00, green: 0.55, blue: 0.00, alpha: 0.30)
+    static let sigkillColor    = NSColor(calibratedRed: 1.00, green: 0.00, blue: 0.00, alpha: 0.30)
+    static let refusedColor    = NSColor(calibratedRed: 0.50, green: 0.50, blue: 0.50, alpha: 0.30)
 
     private let highlight: NSWindow
     private let tooltip: NSWindow
@@ -61,25 +67,58 @@ final class KillwindowUI {
         tooltip.contentView = bg
     }
 
-    func update(at quartzCursor: CGPoint, target: Target?, forceKill: Bool) {
+    // Update is called from mouseMoved and flagsChanged. CGWindowList-only
+    // classification is used here (no AX probe in the hot path). That means
+    // .dialog targets preview as "Terminate" before the click — acceptable
+    // because the real classification and AX probe happen in leftMouseDown.
+    func update(at quartzCursor: CGPoint, target: Target?, forceKill: Bool, closeWindow: Bool, forceKillSystem: Bool) {
         guard let target = target else {
             highlight.orderOut(nil)
             tooltip.orderOut(nil)
             return
         }
 
+        // Compute the strategy using CGWindowList-based kind (no AX probe).
+        let strategy = chooseStrategy(
+            target: target,
+            forceKill: forceKill,
+            closeWindow: closeWindow,
+            forceKillSystem: forceKillSystem
+        )
+
+        // Select tint colour from strategy.
+        let tint: NSColor
+        switch strategy {
+        case .signal(let sig) where sig == SIGKILL:
+            tint = KillwindowUI.sigkillColor
+        case .refusedProtected:
+            tint = KillwindowUI.refusedColor
+        default:
+            tint = KillwindowUI.sigtermColor
+        }
+
         let hiFrame = quartzRectToNS(target.bounds)
         highlight.setFrame(hiFrame, display: true)
-        let tint = forceKill ? KillwindowUI.sigkillColor : KillwindowUI.sigtermColor
         (highlight.contentView as? RoundedBGView)?.layer?.backgroundColor = tint.cgColor
         if !highlight.isVisible { highlight.orderFrontRegardless() }
 
+        // Tooltip text matches the strategy that would fire on click now.
         let text: String
-        if forceKill {
-            text = "Force-kill \"\(target.app)\" (SIGKILL) — right-click to cancel"
-        } else {
-            text = "Terminate \"\(target.app)\" (SIGTERM) — hold ⌘ to force kill — right-click to cancel"
+        switch strategy {
+        case .signal(let sig):
+            if sig == SIGKILL {
+                text = "Force-kill \"\(target.app)\" (SIGKILL) — right-click to cancel"
+            } else {
+                text = "Terminate \"\(target.app)\" (SIGTERM) — hold ⌘ to force kill — right-click to cancel"
+            }
+        case .axClose:
+            text = "Close window (AX) of \"\(target.app)\" — right-click to cancel"
+        case .escapeKey:
+            text = "Dismiss \"\(target.app)\" popover (Esc) — right-click to cancel"
+        case .refusedProtected:
+            text = "\"\(target.app)\" is protected — pass --force-kill-system to override"
         }
+
         label.stringValue = text
         label.sizeToFit()
         let ls = label.frame.size

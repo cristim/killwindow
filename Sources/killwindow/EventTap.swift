@@ -13,6 +13,11 @@ func forceKillNow(flags: CGEventFlags, options: Options) -> Bool {
     options.signal == SIGKILL || flags.contains(.maskCommand)
 }
 
+// True if a click right now should AX-close the window rather than kill.
+func closeWindowNow(flags: CGEventFlags, options: Options) -> Bool {
+    options.closeWindow || flags.contains(.maskAlternate)
+}
+
 func stopApp() {
     NSApp.stop(nil)
     // Post a dummy event to wake the NSApp run loop so it notices the stop flag.
